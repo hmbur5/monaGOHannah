@@ -505,7 +505,7 @@ class DataProcess4():
 
         return matrix, percent_matrix
 
-    def createMatrixReord(self, go_inf):
+    def createMatrixReord(self, go_inf, clustComp):
         size = len(go_inf)
 
         matrix_count = [[0] * size for _ in range(size)];
@@ -531,7 +531,15 @@ class DataProcess4():
                     matrix_geneName[str(i) + "-" + str(j)] = geneStr[:-1]
 
                     # get count
-                    matrix_count[i][j] = len(overlappingGenes)*100.0/len(totalGenes)
+                    iGOids= go_inf[i]["GO_id"].split(";")
+                    jGOids = go_inf[j]["GO_id"].split(";")
+                    simRelVal=SimRelDis(iGOids,'fill',jGOids, clustComp)
+                    if simRelVal>5:
+                        simRelFrac=100
+                    else:
+                        simRelFrac=round(simRelVal*100/5)
+                    matrix_count[i][j] = simRelFrac
+
 
 
 
@@ -581,7 +589,7 @@ class DataProcess4():
 
         go_inf_reOrder = self.reOrder(go_index_reord, go_inf)
 
-        matrix_reOrder = self.createMatrixReord(go_inf_reOrder)  # create matrix and clusterHierData
+        matrix_reOrder = self.createMatrixReord(go_inf_reOrder, clustComp)  # create matrix and clusterHierData
 
         simDict = self.createSimDict(go_inf_reOrder)
 

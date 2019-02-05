@@ -271,7 +271,7 @@ var MonaGO = function(){
 	}
 
 	//creates a D3 structure that can be inputted into the force-directed graph layout
-	function createD3Structure(goids, target) {
+	function createD3Structure(goids, target, target2) {
 
         goids = getUniqueGoid(goids);
 
@@ -320,7 +320,7 @@ var MonaGO = function(){
         			pgoid = parent;
         			pIndex = nodeIndex[pgoid];
 
-        			if (pgoid == target) {
+        			if (pgoid == target || pgoid==target2) {
         			  nodes[i]['is'] = 'child';
         			  nodes[i]['r'] = 30;
         			}
@@ -346,6 +346,14 @@ var MonaGO = function(){
         nodes[nodeIndex[target]].x = width / 2;
         nodes[nodeIndex[target]].y = height - 50;
         nodes[nodeIndex[target]]['is'] = 'target';
+
+        if (target2!='fill'){
+        nodes[nodeIndex[target2]].fixed = true;
+        nodes[nodeIndex[target]].x = width / 3;
+        nodes[nodeIndex[target2]].x = 2*width / 3;
+        nodes[nodeIndex[target2]].y = height - 43;
+        nodes[nodeIndex[target2]]['is'] = 'target';
+        }
 
         return {'nodes' : nodes, 'links' : links};
 	}      
@@ -500,10 +508,17 @@ var MonaGO = function(){
 	}
 
 	//recreate data structures and redraw graph with new nodes
-	function update(goid,svg,width,height) {
-        force = {};
-        struct = parentGO(goid);
-        data = createD3Structure(struct,goid);
+	function update(goid,goid2,svg,width,height) {
+        if (goid2=='fill'){
+            force = {};
+            struct = parentGO(goid);
+            data = createD3Structure(struct,goid,'fill');
+        }
+        else{
+            force = {};
+            struct = parentGO(goid).concat(parentGO(goid2));
+            data = createD3Structure(struct,goid, goid2);
+        }
         if(data.nodes.length < maxNodeNum){
             force = d3.layout.force()
                 .charge(-10000)
@@ -524,6 +539,7 @@ var MonaGO = function(){
         svg.selectAll("text.node").remove();
         drawGraph(data,svg,width,height);
 	}
+        
 
 	function getMaxPval(){
         var max = Number(that.go_inf[0].pVal);
@@ -1110,7 +1126,9 @@ var MonaGO = function(){
         });
 	}
 
-	function updateMatrix(){
+
+
+	function updateMatrixUsingGenes(){
         var newMatrix = [];
         var newArray = [];
 
@@ -1136,6 +1154,62 @@ var MonaGO = function(){
     		return size;
         }
 	  return newMatrix;
+	}
+
+	function updateMatrixUsingSemantics(){
+        var newMatrix = [];
+        var newArray = [];
+
+        that.go_inf.map(function(d1,i){
+            newArray = [];
+            that.go_inf.map(function(d2,j){
+                var matrixSim=0;
+                var sims = [];
+                if(i != j){
+                    var goids1 = d1["GO_id"]
+                    var goids2 = d2["GO_id"]
+                    if (typeof goids1 == 'string'){
+                        goids1=[goids1]
+                    }
+                    if (typeof goids2 == 'string'){
+                        goids2=[goids2]
+                    }
+                    matrixSim=0;
+                    for (var a=0; a<goids1.length; a++){
+                    for (var b=0; b<goids2.length; b++){
+                    goID1=goids1[a];
+                    goID2=goids2[b];
+                    for (var c=0; c<simDict.length; c++){
+                    if (simDict[c][0]==goID1){
+                    if (simDict[c][1]==goID2){
+                    simVal=parseFloat(simDict[c][2]);
+                    sims.push(simVal)
+                    }
+                    }
+                    }
+                    }
+                    }
+                    if (clustComp=='ave'){
+                        var sum, avg=0;
+                        if (sims.length){
+                        sum=sims.reduce(function(x,y){return x+y});
+                        avg=sum/sims.length;
+                        }
+                        var matrixSim = avg;
+                    }
+                    if (clustComp=='min'){
+                        var matrixSim = Math.min.apply(null,sims);
+                    }
+                    if (clustComp=='max'){
+                        var matrixSim = Math.max.apply(null,sims);
+                    }
+                }
+                newArray.push(matrixSim);
+            });
+            newMatrix.push(newArray);
+        });
+        matrix = newMatrix;
+        return newMatrix;
 	}
 
 	function updateGroupSize(){
@@ -1196,6 +1270,12 @@ var MonaGO = function(){
 
         if(that.userHighlightChordIndex !=-1){// click when the chord is already freezed
             updateDetailPanelBasedOnChord(d,i);
+            if (similarity!='Genes'){
+                var overallNumOfGOTerms = getNumOfGOTerms(that.go_inf[d.source.index].GO_id)+getNumOfGOTerms(that.go_inf[d.source.subindex].GO_id);
+                if(overallNumOfGOTerms == 2){
+       	        createGoHierifNecessary(that.go_inf[d.source.index].GO_id,that.go_inf[d.source.subindex].GO_id)
+                 }
+            }
         }
 
         }else{
@@ -1457,7 +1537,12 @@ var MonaGO = function(){
 
 		var removeNodeInArray = removeNodesInArrayOrder(nodePositions);
 
-		matrix = updateMatrix();
+		if (similarity=='Genes'){
+		matrix = updateMatrixUsingGenes();
+		}
+		else{
+		matrix = updateMatrixUsingSemantics();
+		}
 		updateGroupSize();
 		chord = chordMatrix.matrix(matrix).groupSize(that.groupSize);
 
@@ -1518,7 +1603,12 @@ var MonaGO = function(){
 
 		that.memCache["clusterNodesRadius"] = clusterNodesRadius;
 
-		matrix = updateMatrix();
+		if (similarity=='Genes'){
+		matrix = updateMatrixUsingGenes();
+		}
+		else{
+		matrix = updateMatrixUsingSemantics();
+		}
 		updateGroupSize();
 		chord = chordMatrix.matrix(matrix).groupSize(that.groupSize);
 
@@ -1708,7 +1798,7 @@ var MonaGO = function(){
         return node;
 	}
 
-	function createGoHierifNecessary(goid){
+	function createGoHierifNecessary(goid, goid2){
         if(typeof goid == "string"){
             $('#content').append("<div style=\"position:relative;\"><div id=\"go_chart\"></div>")
             var go_chart = d3.select("#go_chart").append("svg")
@@ -1738,7 +1828,7 @@ var MonaGO = function(){
             $('#go_chart').on("mouseover",mouseoverHier);
             $('#go_chart').on("mouseout",mouseoutHier);
 
-            update(goid,hier_group,width,height);
+            update(goid,goid2,hier_group,width,height);
         }
 	}
 
@@ -1798,7 +1888,7 @@ var MonaGO = function(){
             .attr('x',0)
             .attr('y',0);
 
-        update(goid,go_chart,width,height);
+        update(goid,'fill',go_chart,width,height);
 	}
 
 	function createGeneListHtml(go){
@@ -2022,7 +2112,7 @@ var MonaGO = function(){
         		.attr("x", function(d) { return d.x; })
         		.attr("y", function(d) { return d.y + radiusScale(d.r) + 10; });
 
-    		update(goDetail.GO_id,hier_group,hierWidth,hierHeight);
+    		update(goDetail.GO_id,'fill',hier_group,hierWidth,hierHeight);
         })
 	}
 
@@ -2040,7 +2130,7 @@ var MonaGO = function(){
 		$('#content').append(detailPanelTempl);
 
 		setUpDetailPanelListener();
-		createGoHierifNecessary(that.go_inf[i].GO_id);
+		createGoHierifNecessary(that.go_inf[i].GO_id, 'fill');
 		createGOHierForClusterGO();
 	}
 
@@ -2147,7 +2237,7 @@ var MonaGO = function(){
                     }
                     }
                     }
-                    };
+                    }
                 }
 		return templ;
                 
@@ -2155,6 +2245,12 @@ var MonaGO = function(){
 
 	function mouseover_chord(d, i) {
         updateDetailPanelBasedOnChord(d,i)
+        if (similarity!='Genes'){
+            var overallNumOfGOTerms = getNumOfGOTerms(that.go_inf[d.source.index].GO_id)+getNumOfGOTerms(that.go_inf[d.source.subindex].GO_id);
+            if(overallNumOfGOTerms == 2){
+	    createGoHierifNecessary(that.go_inf[d.source.index].GO_id, that.go_inf[d.source.subindex].GO_id)
+            }
+        }
 	}
 
 
@@ -2329,7 +2425,7 @@ var MonaGO = function(){
 		  $('#content').append(detailPanelTempl);
 
 		  setUpDetailPanelListener();
-		  createGoHierifNecessary(that.go_inf[i].GO_id);
+		  createGoHierifNecessary(that.go_inf[i].GO_id, 'fill');
 
 		  chordLayout.classed("fade", function(p) {
 				  return p.source.index != i
